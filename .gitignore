@@ -8,3 +8,4 @@ final_review_gate.py
 outputs/
 logs/
 run_orph.sh
+.env

@@ -1,4 +1,4 @@
-name: orpheus
+name: orpheus-fs
 channels:
   - defaults
 dependencies:
