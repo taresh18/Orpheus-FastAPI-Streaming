@@ -87,10 +87,6 @@ async def _create_audio_stream_generator(text: str, voice: str):
     
     logger.info(f"Starting streaming generation for: '{text[:50]}{'...' if len(text) > 50 else ''}' (voice: {voice})")
     
-    # Send WAV header first for immediate playback
-    wav_header = generate_wav_header(SAMPLE_RATE, 16, 1)
-    yield wav_header
-    
     # Stream audio chunks as they're generated
     try:
         chunk_count = 0
@@ -245,5 +241,11 @@ if __name__ == "__main__":
     host = os.environ.get("SERVER_HOST", "0.0.0.0")
     port = int(os.environ.get("SERVER_PORT", "5005"))
     
-    # Start with reload enabled
-    uvicorn.run("app:app", host=host, port=port, reload=True)
+    # Start with reload enabled, watching only src directory for changes
+    uvicorn.run(
+        "app:app", 
+        host=host, 
+        port=port, 
+        reload=True,
+        reload_dirs=["src"]
+    )
