@@ -8,7 +8,7 @@
 - `conda env create -f environment.yml`
 - `conda activate orpheus-fs`
 - `cp .env.example .env`  # specify the model name / path here
-- `python app.py`
+- `python app.py` # it takes ~5min to get it running 
 
 ### benchmark
 `python benchmark.py`
