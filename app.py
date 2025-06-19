@@ -227,11 +227,12 @@ async def create_speech_api(request: Request):
 
 @app.get("/api/voices")
 async def get_voices():
-    """Get available voices."""
+    """Get available voices with detailed information."""
+    
     return {
-        "voices": AVAILABLE_VOICES,
+        "voices": VOICE_DETAILS,
         "default": DEFAULT_VOICE,
-        "count": len(AVAILABLE_VOICES)
+        "count": len(VOICE_DETAILS)
     }
 
 if __name__ == "__main__":
