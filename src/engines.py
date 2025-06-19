@@ -547,9 +547,7 @@ class TTSService:
             
         Yields:
             Audio chunks as bytes
-        """
-        logger.info(f"Streaming speech generation for: {prompt[:50]}{'...' if len(prompt) > 50 else ''}")
-        
+        """        
         if isinstance(self.token_generator, VLLMTokenGenerator):
             # Use async generation for vLLM
             token_gen = self.token_generator.generate_tokens_async(prompt, voice, **kwargs)

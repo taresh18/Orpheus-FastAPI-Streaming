@@ -86,3 +86,38 @@ AUDIO_CHUNK_DURATION = 0.085  # seconds per chunk estimate
 
 MIN_TOKENS_FIRST_CHUNK = 7 # generate first audio chunk after 7 tokens
 MIN_TOKENS_SUBSEQUENT = 28 # generate subsequent with a 28 token sliding window
+
+VOICE_DETAILS = [
+    {
+        "name": "tara",
+        "description": "A warm, friendly female voice with natural expressiveness",
+        "language": "en",
+        "gender": "female",
+        "accent": "american",
+        "preview_url": None
+    },
+    {
+        "name": "dan",
+        "description": "A smooth, conversational male voice with natural tone",
+        "language": "en",
+        "gender": "male",
+        "accent": "american",
+        "preview_url": None
+    },
+    {
+        "name": "mia",
+        "description": "A sophisticated, articulate female voice with excellent diction",
+        "language": "en",
+        "gender": "female",
+        "accent": "american",
+        "preview_url": None
+    },
+    {
+        "name": "zoe",
+        "description": "A bright, cheerful female voice with expressive delivery",
+        "language": "en",
+        "gender": "female",
+        "accent": "american",
+        "preview_url": None
+    }
+]
