@@ -1,0 +1,8 @@
+fastapi
+httptools
+pydantic
+python-dotenv
+snac
+tensorrt_llm==0.20.0
+uvicorn
+tqdm
