@@ -1,5 +1,10 @@
 # Orpheus TTS
 
-python3.10, RTX-4090
-200ms ttfb on fp16 using vllm
-160 ms ttfb on fp16 using trt-llm
+- RTX-4090, cuda12.8
+- 200ms ttfb on fp16 using vllm
+- 160 ms ttfb on fp16 using trt-llm
+
+## installation
+- `sudo apt-get -y install libopenmpi-dev`
+- `pip install -r requirements.txt` # use virtual env with python3.10
+- bash start.sh

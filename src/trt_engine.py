@@ -6,12 +6,11 @@ from transformers import AutoTokenizer
 from .decoder import tokens_decoder
 import logging
 
-# Get a logger for this module
 logger = logging.getLogger(__name__)
 
 class OrpheusModelTRT:
-    def __init__(self, model_name, dtype="bfloat16", tokenizer=None):
-        self.model_name = model_name
+    def __init__(self):
+        self.model_name = os.getenv("MODEL_NAME", "canopylabs/orpheus-3b-0.1-ft")
         
         # Load available voices from environment variables
         voices_str = os.getenv("AVAILABLE_VOICES", "tara,zoe,jess,zac,leo,mia,julia,leah")
@@ -31,27 +30,21 @@ class OrpheusModelTRT:
         self.max_seq_len = int(os.getenv("TRT_MAX_SEQ_LEN", 8192))
         self.enable_chunked_prefill = os.getenv("TRT_ENABLE_CHUNKED_PREFILL", "True").lower() == 'true'
         self.dtype = os.getenv("TRT_DTYPE", "bfloat16")
+        self.free_gpu_memory_fraction = float(os.getenv("TRT_FREE_GPU_MEMORY_FRACTION", 0.6))
 
         logger.info("--- TRT-LLM Sampling Parameters Loaded ---")
+        logger.info(f"Model Name: {self.model_name}")
         logger.info(f"Temperature: {self.temperature}")
         logger.info(f"Top P: {self.top_p}")
         logger.info(f"Max Tokens: {self.max_tokens}")
         logger.info(f"Repetition Penalty: {self.repetition_penalty}")
         logger.info(f"Stop Token IDs: {self.stop_token_ids}")
         logger.info(f"Model dtype: {self.dtype}")
+        logger.info(f"Free GPU Memory Fraction: {self.free_gpu_memory_fraction}")
         logger.info("-----------------------------------------")
 
         self.engine = self._setup_engine()
-        
-        tokenizer_path = tokenizer if tokenizer else model_name
-        self.tokenizer = self._load_tokenizer(tokenizer_path)
-
-    def _load_tokenizer(self, tokenizer_path):
-        """Load tokenizer from local path or HuggingFace hub"""
-        if os.path.isdir(tokenizer_path):
-            return AutoTokenizer.from_pretrained(tokenizer_path, local_files_only=True)
-        else:
-            return AutoTokenizer.from_pretrained(tokenizer_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         
     def _setup_engine(self):
         return LLM(model=self.model_name,
@@ -59,6 +52,7 @@ class OrpheusModelTRT:
                    max_input_len=self.max_input_len,
                    max_batch_size=self.max_batch_size,
                    max_seq_len=self.max_seq_len,
+                   free_gpu_memory_fraction=self.free_gpu_memory_fraction,
                    enable_chunked_prefill=self.enable_chunked_prefill)
     
     def validate_voice(self, voice):

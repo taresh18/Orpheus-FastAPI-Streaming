@@ -12,10 +12,12 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional
+import warnings
 
-load_dotenv(".env")
+warnings.simplefilter(action='ignore', category=FutureWarning)
 
-# Get a logger for this module
+load_dotenv()
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,9 +47,7 @@ VOICE_DETAILS: List[VoiceDetail] = []
 async def lifespan(app: FastAPI):
     """Initializes the TTS engine on application startup."""
     global engine, VOICE_DETAILS
-    model_name = os.getenv("MODEL_NAME", "canopylabs/orpheus-3b-0.1-ft")
-    logger.info(f"Loading model: {model_name}")
-    engine = OrpheusModelTRT(model_name=model_name)
+    engine = OrpheusModelTRT()
 
     # Dynamically generate voice details from the loaded engine
     VOICE_DETAILS = [
