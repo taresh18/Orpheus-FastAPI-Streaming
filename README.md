@@ -6,6 +6,7 @@
 
 ## installation
 - `sudo apt-get -y install libopenmpi-dev`
-- `pip install -r requirements.txt` # use virtual env with python3.10
+- `conda create -n trt python=3.10` or use a virtual env with python3.10
+- `pip install -r requirements.txt`
 - update start.sh with your hf-token
 - `bash start.sh`
