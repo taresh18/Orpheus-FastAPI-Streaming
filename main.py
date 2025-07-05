@@ -196,6 +196,7 @@ async def tts_stream_ws(websocket: WebSocket):
         while True:
             # Receive message from client
             message = await websocket.receive_text()
+            start_time = time.perf_counter()
             try:
                 data = TTSStreamRequest.parse_raw(message)
             except Exception as e:
@@ -213,7 +214,12 @@ async def tts_stream_ws(websocket: WebSocket):
                         voice=data.voice,
                     )
 
+                    first_chunk = True
                     async for chunk in audio_generator:
+                        if first_chunk:
+                            ttfb = time.perf_counter() - start_time
+                            logger.info(f"Time to first audio chunk (TTFB): {ttfb*1000:.2f} ms")
+                            first_chunk = False
                         await websocket.send_bytes(chunk)
                 else:
                     logger.info("Empty or whitespace-only input received, skipping audio generation.")
