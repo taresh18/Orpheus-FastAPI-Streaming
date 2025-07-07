@@ -105,113 +105,34 @@ async def tts_stream(data: TTSRequest):
     return StreamingResponse(generate_audio_stream(), media_type='audio/pcm')
 
 
-# @app.websocket("/v1/audio/speech/stream/ws")
-# async def tts_stream_ws(websocket: WebSocket):
-#     await websocket.accept()
-
-#     request_queue = asyncio.Queue()
-
-#     async def receive_task():
-#         """Receives messages from the client and puts them in a queue."""
-#         try:
-#             while True:
-#                 message = await websocket.receive_text()
-#                 try:
-#                     data = TTSStreamRequest.parse_raw(message)
-#                     await request_queue.put(data)
-#                     if not data.continue_:
-#                         await request_queue.put(None)  # Sentinel to signal end
-#                         break
-#                 except Exception as e:
-#                     logger.error(f"Error parsing incoming message: {e}")
-#                     await websocket.send_json({"error": "invalid message format"})
-#                     await request_queue.put(None)  # End processing on error
-#                     break
-#         except WebSocketDisconnect:
-#             logger.info("Client disconnected during receive.")
-#             await request_queue.put(None)  # Ensure processor task also exits
-#         except Exception as e:
-#             logger.error(f"An unexpected error occurred in receive_task: {e}")
-#             await request_queue.put(None)
-
-
-#     async def process_task():
-#         """Processes requests from the queue and generates audio."""
-#         is_final_packet = False
-#         while True:
-#             data = await request_queue.get()
-#             if data is None:  # Sentinel received
-#                 is_final_packet = True
-#                 break
-
-#             try:
-#                 await websocket.send_json({"type": "start", "segment_id": data.segment_id})
-
-#                 if data.input and data.input.strip():
-#                     logger.info(f"Generating audio for input: '{data.input.strip()}'")
-#                     audio_generator = engine.generate_speech_async(
-#                         prompt=data.input.strip(),
-#                         voice=data.voice,
-#                     )
-
-#                     async for chunk in audio_generator:
-#                         await websocket.send_bytes(chunk)
-#                 else:
-#                     logger.info("Empty or whitespace-only input received, skipping audio generation.")
-
-#                 await websocket.send_json({"type": "end", "segment_id": data.segment_id})
-#             except Exception as e:
-#                 logger.exception("Error during audio generation in process task.")
-#                 await websocket.send_json({"error": str(e)})
-#                 break  # Stop processing on error
-
-#         if is_final_packet and websocket.client_state == WebSocketState.CONNECTED:
-#             logger.info("Final packet processed, sending done message.")
-#             await websocket.send_json({"done": True})
-
-#     # Run both tasks concurrently
-#     processing_task_handle = asyncio.create_task(process_task())
-#     receiving_task_handle = asyncio.create_task(receive_task())
-
-#     done, pending = await asyncio.wait(
-#         [processing_task_handle, receiving_task_handle],
-#         return_when=asyncio.FIRST_COMPLETED,
-#     )
-
-#     for task in pending:
-#         task.cancel()
-
-#     logger.info("Closing websocket connection.")
-#     if websocket.client_state == WebSocketState.CONNECTED:
-#         try:
-#             await websocket.close()
-#         except Exception:
-#             pass # Ignore errors on close, connection might already be gone
-
-
 @app.websocket("/v1/audio/speech/stream/ws")
 async def tts_stream_ws(websocket: WebSocket):
     await websocket.accept()
+    logger.info("connection open")
     try:
         while True:
-            # Receive message from client
-            message = await websocket.receive_text()
-            start_time = time.perf_counter()
-            try:
-                data = TTSStreamRequest.parse_raw(message)
-            except Exception as e:
-                logger.error(f"Error parsing incoming websocket message: {e}")
-                await websocket.send_json({"error": "invalid message format"})
+            data = await websocket.receive_json()
+
+            if not data.get("continue", True):
+                logger.info("End of stream message received, closing connection.")
                 break
 
-            try:
-                await websocket.send_json({"type": "start", "segment_id": data.segment_id})
+            if not (input_text := data.get("input", "").strip()):
+                logger.info("Empty or whitespace-only input received, skipping audio generation.")
+                continue
 
-                if data.input and data.input.strip():
-                    logger.info(f"Generating audio for input: '{data.input.strip()}'")
+            voice = data.get("voice", "tara")
+            segment_id = data.get("segment_id", "no_segment_id")
+
+            start_time = time.perf_counter()
+            try:
+                await websocket.send_json({"type": "start", "segment_id": segment_id})
+
+                if input_text:
+                    logger.info(f"Generating audio for input: '{input_text}'")
                     audio_generator = engine.generate_speech_async(
-                        prompt=data.input.strip(),
-                        voice=data.voice,
+                        prompt=input_text,
+                        voice=voice,
                     )
 
                     first_chunk = True
@@ -224,9 +145,9 @@ async def tts_stream_ws(websocket: WebSocket):
                 else:
                     logger.info("Empty or whitespace-only input received, skipping audio generation.")
                 
-                await websocket.send_json({"type": "end", "segment_id": data.segment_id})
+                await websocket.send_json({"type": "end", "segment_id": segment_id})
 
-                if not data.continue_:
+                if not data.get("continue", True):
                     await websocket.send_json({"done": True})
                     break
 
