@@ -2,6 +2,7 @@ import asyncio
 import torch
 import os
 from tensorrt_llm import LLM, SamplingParams
+from tensorrt_llm.llmapi import KvCacheConfig
 from transformers import AutoTokenizer
 from .decoder import tokens_decoder
 import logging
@@ -19,19 +20,21 @@ class OrpheusModelTRT:
         # Load sampling parameters from environment variables
         self.temperature = float(os.getenv("TRT_TEMPERATURE", 0.4))
         self.top_p = float(os.getenv("TRT_TOP_P", 0.9))
-        self.max_tokens = int(os.getenv("TRT_MAX_TOKENS", 2000))
+        self.max_tokens = int(os.getenv("TRT_MAX_TOKENS", 1024))
         self.repetition_penalty = float(os.getenv("TRT_REPETITION_PENALTY", 1.1))
         stop_token_ids_str = os.getenv("TRT_STOP_TOKEN_IDS", "128258")
         self.stop_token_ids = [int(token_id.strip()) for token_id in stop_token_ids_str.split(',')]
 
         # Load engine parameters from environment variables
+        self.dtype = os.getenv("TRT_DTYPE", "bfloat16")
         self.max_input_len = int(os.getenv("TRT_MAX_INPUT_LEN", 1024))
         self.max_batch_size = int(os.getenv("TRT_MAX_BATCH_SIZE", 4))
         self.max_seq_len = int(os.getenv("TRT_MAX_SEQ_LEN", 8192))
         self.enable_chunked_prefill = os.getenv("TRT_ENABLE_CHUNKED_PREFILL", "True").lower() == 'true'
-        self.dtype = os.getenv("TRT_DTYPE", "bfloat16")
+        self.max_beam_width = int(os.getenv("TRT_MAX_BEAM_WIDTH", 1))
+        self.max_num_tokens = int(os.getenv("TRT_MAX_NUM_TOKENS", 8192))
         self.free_gpu_memory_fraction = float(os.getenv("TRT_FREE_GPU_MEMORY_FRACTION", 0.6))
-
+        self.max_kv_cache_tokens = int(os.getenv("TRT_KV_CACHE_MAX_TOKENS", 512))
         logger.info("--- TRT-LLM Sampling Parameters Loaded ---")
         logger.info(f"Model Name: {self.model_name}")
         logger.info(f"Temperature: {self.temperature}")
@@ -40,7 +43,14 @@ class OrpheusModelTRT:
         logger.info(f"Repetition Penalty: {self.repetition_penalty}")
         logger.info(f"Stop Token IDs: {self.stop_token_ids}")
         logger.info(f"Model dtype: {self.dtype}")
+        logger.info(f"Max Input Len: {self.max_input_len}")
+        logger.info(f"Max Batch Size: {self.max_batch_size}")
+        logger.info(f"Max Seq Len: {self.max_seq_len}")
+        logger.info(f"Enable Chunked Prefill: {self.enable_chunked_prefill}")
+        logger.info(f"Max Beam Width: {self.max_beam_width}")
+        logger.info(f"Max Num Tokens: {self.max_num_tokens}")
         logger.info(f"Free GPU Memory Fraction: {self.free_gpu_memory_fraction}")
+        logger.info(f"Max KV Cache Tokens: {self.max_kv_cache_tokens}")
         logger.info("-----------------------------------------")
 
         self.engine = self._setup_engine()
@@ -48,12 +58,20 @@ class OrpheusModelTRT:
         
     def _setup_engine(self):
         return LLM(model=self.model_name,
-                   dtype=self.dtype,
-                   max_input_len=self.max_input_len,
-                   max_batch_size=self.max_batch_size,
-                   max_seq_len=self.max_seq_len,
-                   free_gpu_memory_fraction=self.free_gpu_memory_fraction,
-                   enable_chunked_prefill=self.enable_chunked_prefill)
+                    dtype=self.dtype,
+                    max_input_len=self.max_input_len,
+                    max_batch_size=self.max_batch_size,
+                    max_seq_len=self.max_seq_len,
+                    enable_chunked_prefill=self.enable_chunked_prefill,
+                    trust_remote_code=True,
+                    max_beam_width=self.max_beam_width,
+                    max_num_tokens=self.max_num_tokens,
+                    kv_cache_config=KvCacheConfig(
+                        free_gpu_memory_fraction=self.free_gpu_memory_fraction,
+                        # max_tokens=self.max_kv_cache_tokens,
+                        # max_attention_window=[32]
+                    )
+        )
     
     def validate_voice(self, voice):
         if voice:
