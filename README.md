@@ -1,4 +1,4 @@
-# Orpheus TTS FastAPI server with low latency streaming support
+# Orpheus TTS server with low latency streaming
 
 - RTX-4090, cuda12.8
 - 200ms ttfb on fp16 using vllm
