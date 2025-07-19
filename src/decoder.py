@@ -3,21 +3,38 @@ import numpy as np
 import torch
 import asyncio
 import threading
-import queue
 import os
 import time
-from collections import deque
 
+torch.set_num_threads(1)
+
+# Initialize SNAC model
 model = SNAC.from_pretrained("hubertsiuzdak/snac_24khz").eval()
-
-# Check if CUDA is available and set device accordingly
 snac_device = "cuda" if torch.cuda.is_available() else "cpu"
 model = model.to(snac_device)
+if snac_device == "cuda":
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.deterministic = False
+    
+    # Warm up the model with a dummy inference
+    dummy_codes = [
+        torch.randint(0, 4096, (1, 1), dtype=torch.int32, device=snac_device),
+        torch.randint(0, 4096, (1, 2), dtype=torch.int32, device=snac_device),
+        torch.randint(0, 4096, (1, 4), dtype=torch.int32, device=snac_device)
+    ]
+    with torch.inference_mode():
+        _ = model.decode(dummy_codes)
 
 # Local cache to avoid repeated parsing of the same token strings
 _token_id_cache = {}
-_MAX_CACHE_SIZE = 25000
-_CUSTOM_TOKEN_PREFIX = "<custom_token_"
+_cache_lock = threading.Lock()
+
+# Load decoder configuration from environment variables
+MAX_CACHE_SIZE = int(os.environ["MAX_CACHE_SIZE"])
+CUSTOM_TOKEN_PREFIX = os.environ["CUSTOM_TOKEN_PREFIX"]
+MIN_FRAMES_FIRST = int(os.environ["MIN_FRAMES_FIRST"])
+MIN_FRAMES_SUBSEQ = int(os.environ["MIN_FRAMES_SUBSEQ"])
+PROCESS_EVERY = int(os.environ["PROCESS_EVERY"])
 
 
 def turn_token_into_id(token_string, index):
@@ -31,36 +48,42 @@ def turn_token_into_id(token_string, index):
         Optional[int]: Numeric token ID or ``None`` if the token is invalid.
     """
     token_string = token_string.strip()
-    mod = index % 7  # Offset cycles every 7 tokens
+    mod = index % 7
     cache_key = (token_string, mod)
 
-    if cache_key in _token_id_cache:
-        return _token_id_cache[cache_key]
+    # Thread-safe cache lookup
+    with _cache_lock:
+        if cache_key in _token_id_cache:
+            return _token_id_cache[cache_key]
 
     # Locate the last occurrence of the custom token pattern (mirrors original logic)
-    last_idx = token_string.rfind(_CUSTOM_TOKEN_PREFIX)
+    last_idx = token_string.rfind(CUSTOM_TOKEN_PREFIX)
     if last_idx == -1:
-        if len(_token_id_cache) < _MAX_CACHE_SIZE:
-            _token_id_cache[cache_key] = None
+        with _cache_lock:
+            if len(_token_id_cache) < MAX_CACHE_SIZE:
+                _token_id_cache[cache_key] = None
         return None
 
     token_substr = token_string[last_idx:]  # from prefix to end
 
-    if not token_substr.startswith(_CUSTOM_TOKEN_PREFIX) or not token_substr.endswith(">"):
-        if len(_token_id_cache) < _MAX_CACHE_SIZE:
-            _token_id_cache[cache_key] = None
+    if not token_substr.startswith(CUSTOM_TOKEN_PREFIX) or not token_substr.endswith(">"):
+        with _cache_lock:
+            if len(_token_id_cache) < MAX_CACHE_SIZE:
+                _token_id_cache[cache_key] = None
         return None
 
-    digits = token_substr[len(_CUSTOM_TOKEN_PREFIX):-1]
+    digits = token_substr[len(CUSTOM_TOKEN_PREFIX):-1]
     if not digits.isdigit():
-        if len(_token_id_cache) < _MAX_CACHE_SIZE:
-            _token_id_cache[cache_key] = None
+        with _cache_lock:
+            if len(_token_id_cache) < MAX_CACHE_SIZE:
+                _token_id_cache[cache_key] = None
         return None
 
     token_id = int(digits) - 10 - (mod * 4096)
 
-    if len(_token_id_cache) < _MAX_CACHE_SIZE:
-        _token_id_cache[cache_key] = token_id
+    with _cache_lock:
+        if len(_token_id_cache) < MAX_CACHE_SIZE:
+            _token_id_cache[cache_key] = token_id
 
     return token_id
 
@@ -69,7 +92,7 @@ def convert_to_audio(multiframe, count):
     """
     Highly optimized version of convert_to_audio that eliminates inefficient 
     tensor operations and reduces CPU-GPU transfers for much faster inference
-    on high-end GPUs.
+    on high-end GPUs. Optimized for concurrent requests.
     """
     if len(multiframe) < 7:
         return None
@@ -125,9 +148,6 @@ async def tokens_decoder(token_gen):
     buffer = []
     count = 0
     first_chunk_sent = False
-    MIN_FRAMES_FIRST = 7      # 1 frame for ultra-low latency
-    MIN_FRAMES_SUBSEQ = 28    # 4 frames
-    PROCESS_EVERY = 7         # process at every full frame boundary
 
     async for token_sim in token_gen:
         token = turn_token_into_id(token_sim, count)
@@ -146,33 +166,3 @@ async def tokens_decoder(token_gen):
             audio = convert_to_audio(buffer[-MIN_FRAMES_SUBSEQ:], count)
             if audio is not None:
                 yield audio
-
-
-def tokens_decoder_sync(syn_token_gen):
-
-    audio_queue = queue.Queue()
-
-    # Convert the synchronous token generator into an async generator.
-    async def async_token_gen():
-        for token in syn_token_gen:
-            yield token
-
-    async def async_producer():
-        # tokens_decoder.tokens_decoder is assumed to be an async generator that processes tokens.
-        async for audio_chunk in tokens_decoder(async_token_gen()):
-            audio_queue.put(audio_chunk)
-        audio_queue.put(None)  # Sentinel
-
-    def run_async():
-        asyncio.run(async_producer())
-
-    thread = threading.Thread(target=run_async)
-    thread.start()
-
-    while True:
-        audio = audio_queue.get()
-        if audio is None:
-            break
-        yield audio
-
-    thread.join()
